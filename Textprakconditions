@@ -1,0 +1,214 @@
+include settings.INC
+include io2023.INC
+.Stack 4096
+
+.Data 
+input_msg db 'Enter text (up to 100 chars, ends with "."): ', 0
+used_rule1 db 'Used 1 rule ' ,0
+used_rule2 db 'Used 2 rule ' , 0
+text_out db 'Your text: ', 0
+transformed db 'Transformed text: ', 0
+text_len dd 0                ; 
+text db 100 dup(?)               ;переменная для текста
+numbers db  100 dup(?)           ; временная переменная для символов 
+not_numbers db 100 dup(?)        ; временная переменная не для символов
+.Code
+     CheckProperty proc
+    push ebp
+    mov ebp, esp
+    push esi
+    push ecx
+
+    mov esi, [ebp+12]    ; esi = адрес текста
+    mov al, [esi]        ; первый символ
+    mov ecx, [ebp+8]      ;в ecx - кол-во символов
+    ; Проверка, латинская ли буква первая
+    cmp al, 'A'
+    jb not_latin
+    cmp al, 'Z'
+    jbe check_last
+    cmp al, 'a'
+    jb not_latin
+    cmp al, 'z'
+    ja not_latin
+
+check_last:
+    
+    add esi, ecx
+    dec esi              ; esi = адрес последнего символа
+    mov al, [esi]
+  ; проверка, латинская ли  последняя буква
+    cmp al, 'A'
+    jb not_latin
+    cmp al, 'Z'
+    jbe latin_ok 
+    cmp al, 'a'
+    jb not_latin
+    cmp al, 'z'
+    ja not_latin
+
+latin_ok:
+    mov al, 1
+    jmp done_check
+
+not_latin:
+    mov al, 0
+done_check:
+    pop ecx
+    pop esi
+    pop ebp
+    ret 8
+CheckProperty endp
+
+  Rule_1 proc
+    push ebp
+    mov ebp, esp
+    push esi
+    push ecx
+
+    mov esi, [ebp+8]
+    mov ecx, [ebp+12]
+
+loop_rule1:
+    mov al, [esi]
+    cmp al, 'A'
+    jb skip ;не латинская - скипаем
+    cmp al, 'Z'
+    ja skip  ; не латинская - скипаем
+
+    ; изменяем на симметричную
+    mov ah, al
+    sub ah, 'A'
+    mov al, 'Z'
+    sub al, ah
+    mov [esi], al
+
+skip:
+    inc esi
+    loop loop_rule1
+
+    pop ecx
+    pop esi
+    pop ebp
+    ret 4
+Rule_1 endp
+  
+
+ Rule_2 proc
+    push ebp
+    mov ebp, esp
+    push esi                ; Указатель для чтения
+    push edi                ; Указатель для записи
+    push ecx                ; Счетчик цикла
+    push ebx                ; Для временных значений
+    ; === Инициализация ===
+    mov esi, [ebp+12]        ; ESI = адрес текста (offset text)
+    mov ecx, [ebp+8]       ; ECX = длина текста(text_len)
+    xor ebx, ebx            ; EBX = счетчик цифр(длина  number_text)
+      
+    ; Подсчет чисел  и перенос их в соответствующие текста
+     mov edx,OFFSET not_numbers
+     mov edi,OFFSET numbers
+count_loop:
+    mov al,[esi]
+    cmp al,'0'
+    jb not_digit
+    cmp al,'9'
+    ja not_digit
+     mov [edi],al
+     inc edi 
+     inc ebx 
+     jmp next
+    not_digit:
+    mov [edx],al
+    inc edx
+    next:
+    inc esi 
+    loop count_loop
+     
+     ;переносим сначала цифры, а потом и оставшийся текст в изначальный текст
+     mov esi,[ebp+12]
+     mov edi, offset numbers
+     mov ecx,ebx 
+     copy_numbers:
+
+    mov al, [edi]
+    mov [esi], al
+    inc edi
+    inc esi
+    loop copy_numbers
+
+     mov ecx, [ebp+8]
+    sub ecx, ebx
+    mov edi, offset not_numbers
+    copy_not_numbers:
+     mov al, [edi]
+    mov [esi], al
+    inc edi
+    inc esi
+    loop copy_not_numbers
+
+     pop ebx
+    pop ecx
+    pop edi
+    pop esi
+    mov esp, ebp
+    pop ebp
+    ret 8
+
+
+Rule_2 endp
+  
+ start:
+    ; Вывод приглашения
+    OUTSTR offset input_msg
+    
+    ; Инициализация указателя
+    mov edx, offset text
+    
+    ; Ввод текста
+    mov ecx, 100             
+Input_loop:
+    INCHAR al                
+    cmp al, '.'              
+    je end_input             
+    mov [edx], al            
+    inc edx                  
+    inc text_len             
+    loop Input_loop
+         
+    
+end_input:
+    OUTSTR offset text_out  
+    OUTSTR offset text       ; Вывод самого текста
+    NEWLINE
+
+push offset text
+push text_len
+
+call CheckProperty ;определяем выполняется ли свойство al=1 -> выполняется delaem rule1 inache rule2
+cmp al,0
+je doRule_2
+doRule_1:
+push text_len
+push offset text 
+call Rule_1
+OUTSTR offset used_rule1
+NEWLINE
+OUTSTR OFFSET transformed
+OUTSTR offset text
+jmp Fin
+; применяем правило 2 
+doRule_2:
+push offset text    ; Адрес текста
+push text_len       ; Длина текста
+call Rule_2
+OUTSTR offset used_rule2
+NEWLINE
+OUTSTR OFFSET transformed
+OUTSTR offset text
+Fin:
+EXIT
+
+
+end start
