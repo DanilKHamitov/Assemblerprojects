@@ -1,0 +1,268 @@
+include settings.inc
+include io2023.inc
+
+.stack 4096
+
+.data
+b1 db ?
+b2 db ?
+b3 db ?
+
+w1 dw ?
+w2 dw ?
+w3 dw ?
+
+d1 dd ?
+d2 dd ?
+d3 dd ? 
+
+textOverflow db 'Overflow!', 0
+textResult db 'Result: ', 0
+texterror1 db 'ERROR constant!', 0
+texterror2 db 'ERROR register',0
+texterror3 db 'ERROR dword',0
+
+.code
+
+AddThree MACRO p1, p2, p3
+    local max_is_byte, max_is_word, doneLabel
+    local overflow_detected_byte, overflow_detected_word
+    local no_overflow_byte
+
+    ;проверка на константы
+    IF ((OPATTR p1) AND 00000100b) OR ((OPATTR p2) AND 00000100b) OR ((OPATTR p3) AND 00000100b)
+        OUTSTR offset texterror1
+        NEWLINE
+        EXITM
+    ENDIF
+
+    ;проверка на регистры 
+    IF ((OPATTR p1) AND 00010000b) OR ((OPATTR p2) AND 00010000b) OR ((OPATTR p3) AND 00010000b)
+        OUTSTR offset texterror2
+        NEWLINE
+        EXITM
+    ENDIF
+
+    ;проверка на dword
+    IF TYPE p1 EQ 4 OR TYPE p2 EQ 4 OR TYPE p3 EQ 4
+        OUTSTR offset texterror3
+        NEWLINE
+        EXITM
+    ENDIF
+
+    ;определяем максимальный тип
+    IF TYPE p1 EQ 2 OR TYPE p2 EQ 2 OR TYPE p3 EQ 2
+        jmp max_is_word
+    ENDIF
+
+;если максимальный тип byte
+max_is_byte:
+    xor eax, eax
+    mov al, BYTE PTR p1
+    add al, BYTE PTR p2
+    add al, BYTE PTR p3
+    jnc no_overflow_byte
+
+    OUTSTR offset textOverflow
+    NEWLINE
+
+no_overflow_byte:
+    mov BYTE PTR p1, al
+    OUTSTR offset textResult
+    movzx eax, al
+    OUTI eax
+    NEWLINE
+    jmp doneLabel
+
+ ;если максимальный type word 
+max_is_word:
+    xor eax, eax
+    xor ebx, ebx
+    xor ecx, ecx
+
+    ; расширение всех значений до WORD
+    IF TYPE p1 EQ 1
+        movzx ax, BYTE PTR p1
+    ELSE
+        mov ax, WORD PTR p1
+    ENDIF
+
+    IF TYPE p2 EQ 1
+        movzx bx, BYTE PTR p2
+    ELSE
+        mov bx, WORD PTR p2
+    ENDIF
+
+    IF TYPE p3 EQ 1
+        movzx cx, BYTE PTR p3
+    ELSE
+        mov cx, WORD PTR p3
+    ENDIF
+
+    add ax, bx
+    add ax, cx
+
+    ; проверяем переполнения
+    IF TYPE p1 EQ 1
+        cmp ax, 255
+        ja overflow_detected_byte
+        mov BYTE PTR p1, al
+        OUTSTR offset textResult
+        movzx eax, al
+        OUTI eax
+        NEWLINE
+        jmp doneLabel
+
+overflow_detected_byte:
+        OUTSTR offset textOverflow
+        
+        mov BYTE PTR p1, al
+        OUTSTR offset textResult
+        movzx eax, al
+        OUTI eax
+        NEWLINE
+        jmp doneLabel
+    ELSE
+        cmp ax, 65535
+        ja overflow_detected_word
+        mov WORD PTR p1, ax
+        OUTSTR offset textResult
+        movzx eax, ax
+        OUTI eax
+        NEWLINE
+        jmp doneLabel
+
+overflow_detected_word:
+        OUTSTR offset textOverflow
+        NEWLINE
+        mov WORD PTR p1, ax
+        OUTSTR offset textResult
+        movzx eax, ax
+        OUTI eax
+        NEWLINE
+    ENDIF
+
+doneLabel:
+ENDM
+
+; --- Тестовый запуск ---
+start:
+    NEWLINE
+
+    ; Значения
+    mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+
+    
+
+AddThree b1, b2, b3
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree b2 ,b3 ,b1
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree w1, w2, w3
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 3000
+    mov w2, 5000
+    mov w3, 60000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree w3, w2, w1
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree d1, d2, d3
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree w1, b1, w3
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree d2, w2, b2
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree b3, b1, w2
+mov b1, 10
+    mov b2, 20
+    mov b3, 30
+
+    mov w1, 1000
+    mov w2, 2000
+    mov w3, 3000
+    mov d1,100000
+    mov d2,200000
+    mov d3,300000
+AddThree b1, b2, 7
+AddThree w1, 5, 20
+AddThree 5, b1, 4
+AddThree d2, 5, 6
+AddThree 5, 2, w3
+AddThree ax, bx, dx
+AddThree ax, w1, w2
+AddThree w1, w2, si
+AddThree al, b2, cl
+AddThree ax, w2, dl
+AddThree ax, b3, bl
+
+
+    exit
+end start
