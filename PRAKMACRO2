@@ -1,0 +1,190 @@
+include settings.inc
+include io2023.inc
+
+.stack 4096
+
+.data
+b1 db 0
+b2 db 5
+b3 db 2
+
+w1 dw 112
+w2 dw 3
+w3 dw 4
+
+space db ' ', 0
+
+msg_cmd    db 'CALL_THREE ', 0
+msg_mmul   db 'MMUL ', 0
+msg_params db 'Parameters: ', 0
+msg_result db 'Result: ', 0
+
+msg_err1 db 'Error 1: Unsupported operation (only MMUL allowed)', 0
+msg_err3 db 'Error 3: Parameter is dword not allowed', 0
+msg_err4 db 'Error 4: Parameter is constant not allowed', 0
+msg_err5 db 'Error 5: All parameters are constants', 0
+msg_err6 db 'Error 6: Parameter sizes mismatch', 0
+msg_err7 db 'Error 7: Overflow occurred', 0
+
+.code
+
+CALL_THREE MACRO op, p1, p2, p3
+    LOCAL overflow_lbl, error_exit, output_result, fin
+    
+    ; Проверка поддерживаемой операции (должна быть "MMUL")
+    IFDIF <op>, <MMUL>
+        OUTSTR offset msg_err1
+        NEWLINE
+        EXITM
+    ENDIF
+    
+    ; Вывод команды
+    OUTSTR offset msg_cmd
+    OUTSTR offset msg_mmul
+    
+    NEWLINE
+    ; Проверка на константы (хотя бы один параметр - константа)
+    IF (((OPATTR p1) AND 4) NE 0) OR (((OPATTR p2) AND 4) NE 0) OR (((OPATTR p3) AND 4) NE 0)
+        OUTSTR offset msg_err4
+        NEWLINE
+        EXITM
+    ENDIF
+
+    ; Проверка размеров параметров
+    IF (TYPE p1 NE TYPE p2) OR (TYPE p1 NE TYPE p3)
+        OUTSTR offset msg_err6
+        NEWLINE
+        EXITM
+    ENDIF
+
+    ; Запрет dword
+    IF TYPE p1 EQ 4
+        OUTSTR offset msg_err3
+        NEWLINE
+        EXITM
+    ENDIF
+
+    ; Загрузка p2 в eax с расширением знака (умножение p2 * p3)
+    IF TYPE p2 EQ 1
+        movsx eax, BYTE PTR p2
+    ELSEIF TYPE p2 EQ 2
+        movsx eax, WORD PTR p2
+    ENDIF
+    mov ebx, eax       ; ebx = p2
+
+    ; Загрузка p3 в eax с расширением знака
+    IF TYPE p3 EQ 1
+        movsx eax, BYTE PTR p3
+    ELSEIF TYPE p3 EQ 2
+        movsx eax, WORD PTR p3
+    ENDIF
+
+    ; Умножение ebx = p2 * p3
+    imul ebx, eax
+    jo overflow_lbl    ; проверка переполнения при умножении
+
+    ; Загрузка p1 в eax с расширением знака
+    IF TYPE p1 EQ 1
+        movsx eax, BYTE PTR p1
+    ELSEIF TYPE p1 EQ 2
+        movsx eax, WORD PTR p1
+    ENDIF
+
+    ; Сложение eax = p1 + (p2 * p3)
+    add eax, ebx
+    jo overflow_lbl    ; проверка переполнения при сложении
+
+    ; Дополнительная проверка переполнения в пределах типа
+    IF TYPE p1 EQ 1    ; byte
+        cmp eax, 127
+        jg overflow_lbl
+        cmp eax, -128
+        jl overflow_lbl
+    ELSEIF TYPE p1 EQ 2  ; word
+        cmp eax, 32767
+        jg overflow_lbl
+        cmp eax, -32768
+        jl overflow_lbl
+    ENDIF
+
+    ; Запись результата обратно в p1
+    IF TYPE p1 EQ 1
+        mov BYTE PTR p1, al
+    ELSEIF TYPE p1 EQ 2
+        mov WORD PTR p1, ax
+    ENDIF
+
+    jmp output_result
+
+overflow_lbl:
+    OUTSTR offset msg_err7
+    NEWLINE
+    jmp fin
+
+output_result:
+    ; Вывод параметров
+    OUTSTR offset msg_params
+
+    ; p1
+    IF TYPE p1 EQ 1
+        movsx eax, BYTE PTR p1
+    ELSEIF TYPE p1 EQ 2
+        movsx eax, WORD PTR p1
+    ENDIF
+    OUTI eax
+    OUTSTR offset space
+
+    ; p2
+    IF TYPE p2 EQ 1
+        movsx eax, BYTE PTR p2
+    ELSEIF TYPE p2 EQ 2
+        movsx eax, WORD PTR p2
+    ENDIF
+    OUTI eax
+    OUTSTR offset space
+
+    ; p3
+    IF TYPE p3 EQ 1
+        movsx eax, BYTE PTR p3
+    ELSEIF TYPE p3 EQ 2
+        movsx eax, WORD PTR p3
+    ENDIF
+    OUTI eax
+    NEWLINE
+
+    ; Вывод результата
+    OUTSTR offset msg_result
+    IF TYPE p1 EQ 1
+        movsx eax, BYTE PTR p1
+    ELSEIF TYPE p1 EQ 2
+        movsx eax, WORD PTR p1
+    ENDIF
+    OUTI eax
+    NEWLINE
+    
+fin:
+ENDM
+
+start:
+    ; Инициализация переменных
+    mov b1, 0
+    mov b2, 10
+    mov b3, 2
+
+    mov w1, 112
+    mov w2, 3
+    mov w3, 4
+
+    ; Корректные тесты
+    CALL_THREE MMUL, b1, b2, b3   ; byte: 0 + 5*2 = 10
+    CALL_THREE MMUL, w1, w2, w3   ; word: 112 + 3*4 = 124
+
+    ; Тесты с ошибками
+    CALL_THREE MULL, b1, b2, b3   ; Error 1: Unsupported operation
+    CALL_THREE MMUL, b1, w2, b3   ; Error 6: Parameter sizes mismatch
+    CALL_THREE MMUL, w1, 5, w3    ; Error 4: Parameter is constant
+    mov b1, 120
+    CALL_THREE MMUL, b1, b2, b3   ; Error 7: Overflow (120 + 10*2 = 140 > 127)
+
+    exit
+end start
